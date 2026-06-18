@@ -131,7 +131,11 @@ async def broadcast(book_name:str):
     for connection in main.connections:
         await connection.send_text(f'New book added :{book_name}')
 
-    
+# my_funcs.py
+def clear_all_cache():
+    """Clear all Redis cache (for testing)"""
+    r.flushdb()
+    return {"message": "Cache cleared"}    
 
 
 
