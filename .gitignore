@@ -1,0 +1,25 @@
+# File name: .gitignore
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual environment
+myenv/
+venv/
+env/
+
+# Environment variables (SECRETS!)
+.env
+.env.local
+
+# Uploaded files
+uploads/
+media/
+
+# IDE settings
+.vscode/
+.idea/
+
+# Log files
+*.log
