@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Redis Speed Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        input {
+            padding: 8px;
+            font-size: 16px;
+            width: 60px;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background: #f9f9f9;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+        #status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .cache-hit {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .cache-miss {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+</head>
+<body>
+    <h1>🚀 Redis Speed Test</h1>
+    <p>Enter a book ID and click "Test" to see if it comes from Redis or Database.</p>
+    
+    <div>
+        <label>Book ID: </label>
+        <input type="number" id="bookId" value="7">
+        <button onclick="testSpeed()">Test Speed</button>
+        <button onclick="clearCache()">🗑️ Clear Redis Cache</button>
+        <button onclick="runMultipleTests()">🔄 Run 3 Tests</button>
+    </div>
+    
+    <div id="result">Click "Test Speed" to start...</div>
+    <div id="status"></div>
+    <div id="history"></div>
+
+    <script>
+        const API_URL = 'http://127.0.0.1:8000';
+        let testHistory = [];
+
+        async function testSpeed() {
+            const bookId = document.getElementById('bookId').value;
+            const resultDiv = document.getElementById('result');
+            const statusDiv = document.getElementById('status');
+            
+            if (!bookId) {
+                resultDiv.textContent = '❌ Please enter a book ID';
+                return;
+            }
+
+            resultDiv.textContent = '⏳ Fetching book...';
+            statusDiv.textContent = '';
+            statusDiv.className = '';
+
+            const startTime = performance.now();
+
+            try {
+                const response = await fetch(`${API_URL}/book/${bookId}`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                const endTime = performance.now();
+                const elapsed = ((endTime - startTime) / 1000).toFixed(4);
+
+                // Display the data
+                resultDiv.textContent = JSON.stringify(data, null, 2);
+
+                // Determine if it came from cache or database based on speed
+                let source = '';
+                let className = '';
+                let speedEmoji = '';
+
+                if (elapsed < 0.02) {
+                    source = '⚡ REDIS CACHE';
+                    className = 'cache-hit';
+                    speedEmoji = '🚀 Lightning fast!';
+                } else if (elapsed < 0.05) {
+                    source = '🔮 REDIS CACHE (some network delay)';
+                    className = 'cache-hit';
+                    speedEmoji = '⚡ Fast!';
+                } else if (elapsed < 0.2) {
+                    source = '🐢 DATABASE QUERY';
+                    className = 'cache-miss';
+                    speedEmoji = '🐌 Database query';
+                } else {
+                    source = '🐌 DATABASE QUERY (slow)';
+                    className = 'cache-miss';
+                    speedEmoji = '⚠️ Slow database query!';
+                }
+
+                // Show status
+                statusDiv.innerHTML = `
+                    <strong>Source:</strong> ${source}<br>
+                    <strong>Time:</strong> ${elapsed} seconds<br>
+                    <strong>Speed:</strong> ${speedEmoji}
+                `;
+                statusDiv.className = className;
+
+                // Add to history
+                testHistory.push({
+                    id: bookId,
+                    time: elapsed,
+                    source: source,
+                    timestamp: new Date().toLocaleTimeString()
+                });
+
+                updateHistory();
+
+                // Special message for first test
+                if (testHistory.length === 1) {
+                    statusDiv.innerHTML += `<br><br>💡 <strong>Tip:</strong> Fetch the same book again to see it from Redis!`;
+                }
+
+            } catch (error) {
+                resultDiv.textContent = `❌ Error: ${error.message}`;
+                statusDiv.textContent = '❌ Failed to fetch book';
+                statusDiv.className = 'error';
+            }
+        }
+
+        async function clearCache() {
+            try {
+                const response = await fetch(`${API_URL}/clear-cache`, {
+                    method: 'POST'
+                });
+                const result = await response.json();
+                document.getElementById('result').textContent = JSON.stringify(result, null, 2);
+                document.getElementById('status').textContent = '✅ Cache cleared!';
+                document.getElementById('status').className = 'cache-hit';
+                testHistory = [];
+                updateHistory();
+            } catch (error) {
+                document.getElementById('result').textContent = `❌ Error: ${error.message}`;
+            }
+        }
+
+        async function runMultipleTests() {
+            const bookId = document.getElementById('bookId').value;
+            if (!bookId) {
+                alert('Please enter a book ID');
+                return;
+            }
+
+            document.getElementById('result').textContent = '⏳ Running 3 tests...';
+            
+            // First test (should be database)
+            await testSpeed();
+            await sleep(500);
+            
+            // Second test (should be Redis)
+            await testSpeed();
+            await sleep(500);
+            
+            // Third test (should be Redis)
+            await testSpeed();
+            
+            document.getElementById('result').textContent = '✅ 3 tests completed! Check the history below.';
+        }
+
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        function updateHistory() {
+            const historyDiv = document.getElementById('history');
+            if (testHistory.length === 0) {
+                historyDiv.innerHTML = '';
+                return;
+            }
+
+            let html = '<h3>📊 Test History</h3><table style="width:100%;border-collapse:collapse;">';
+            html += `
+                <tr style="background:#f0f0f0;">
+                    <th style="padding:8px;border:1px solid #ddd;text-align:left;">#</th>
+                    <th style="padding:8px;border:1px solid #ddd;text-align:left;">Book ID</th>
+                    <th style="padding:8px;border:1px solid #ddd;text-align:left;">Time (seconds)</th>
+                    <th style="padding:8px;border:1px solid #ddd;text-align:left;">Source</th>
+                    <th style="padding:8px;border:1px solid #ddd;text-align:left;">Time</th>
+                </tr>
+            `;
+
+            testHistory.forEach((test, index) => {
+                const isCache = test.source.includes('CACHE');
+                const color = isCache ? '#d4edda' : '#fff3cd';
+                html += `
+                    <tr style="background:${color};">
+                        <td style="padding:8px;border:1px solid #ddd;">${index + 1}</td>
+                        <td style="padding:8px;border:1px solid #ddd;">${test.id}</td>
+                        <td style="padding:8px;border:1px solid #ddd;">${test.time}</td>
+                        <td style="padding:8px;border:1px solid #ddd;">${test.source}</td>
+                        <td style="padding:8px;border:1px solid #ddd;">${test.timestamp}</td>
+                    </tr>
+                `;
+            });
+
+            html += '</table>';
+            
+            // Show summary
+            const cacheHits = testHistory.filter(t => t.source.includes('CACHE')).length;
+            const total = testHistory.length;
+            html += `
+                <p style="margin-top:10px;">
+                    <strong>Summary:</strong> 
+                    ${cacheHits}/${total} requests came from Redis cache 
+                    (${((cacheHits/total)*100).toFixed(0)}% cache hit rate)
+                </p>
+            `;
+
+            historyDiv.innerHTML = html;
+        }
+
+        // Auto-run test when page loads (wait 1 second for server to be ready)
+        setTimeout(() => {
+            document.getElementById('result').textContent = '🚀 Ready! Click "Test Speed" to start.';
+        }, 1000);
+
+        // Press Enter to run test
+        document.getElementById('bookId').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                testSpeed();
+            }
+        });
+    </script>
+</body>
+</html>

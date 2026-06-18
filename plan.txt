@@ -1,0 +1,31 @@
+okay i'll make an app  where each user can make books and there's accounts ,only the author of books can edit the book but other users can see the book so -> protected and unprotected endpoints
+
+remember you'll use relationships in this project
+
+look you will make a function i don't care what it does all i care is that i won't manually enter the user_id of each book to make it known it relates to which user No .i'll grab the user_id by name so the author name which is ahmed dagher remember you'll query the User table until you find that name grab his user.id then make user_id(of book)= it or you can change the foreign key from author_id to just author name wit rayah nafsak.
+ 
+5 hours later: you realized it's best to make the foregin key point to the primary key because the name can get updated so let's get back to the grabing id by name thing 
+
+
+another problem: i forget that when i add a column (for example the foreign key author_id) you have to delete the table and create it again that's if you don't use alembic
+
+
+ofcourse before you need to setup the database models and schemas
+ok the plan:-
+1-make the book crud functions
+2-make the author crud functions
+3-make the relationships functions
+4-security:-
+1-make auth.py 
+2-make hashing functions(hash password,and decode or varify password) using bcrypt 
+3-do your imports
+4-make your token functions(creating the token, decoding or varifying the token) using jwt
+5-make your security functions(
+    1-authenticate user(which is used in log in to check the email and password and let him enter and also return user so you can then use this user to return other data for example make him see his progress)
+    2-get_current_user(this extracts the user from the token,and you'll use this in every protected endpoint to get the user from the token) summary :get token from argument-> decode check if it's good return data-> extract id from data-> get user by id-> return user
+)
+3-authorization roles in the database
+4-authorization by tokens
+
+
+now you run the fastapi server and also run a redis server 
