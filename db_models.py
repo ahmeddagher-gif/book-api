@@ -1,4 +1,4 @@
-from sqlalchemy.ext.declarative import declarative_base 
+from sqlalchemy.orm import declarative_base 
 from schemas import Role
 from sqlalchemy import Column, Integer, String, ForeignKey,Enum
 from sqlalchemy.orm import relationship

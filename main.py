@@ -141,7 +141,7 @@ def log_in(request:Request,log_in_data:my_log_in,db:Session=Depends(get_db))->to
             detail="wrong email or password",
             headers={"WWW-Authenticate": "Bearer"}
             )
-    expiry_time=datetime.now(timezone.utc)+timedelta(minutes=30)
+    expiry_time=timedelta(minutes=30)
     data={
         "author_id":author.id
         
