@@ -1,10 +1,13 @@
 from sqlalchemy import create_engine
-
 from sqlalchemy.orm import sessionmaker
+import os
+from dotenv import load_dotenv
 
-DATABASE_URL='postgresql://neondb_owner:npg_gXzkn76DyNUR@ep-purple-lab-aeo90qof-pooler.c-2.us-east-2.aws.neon.tech/book_project?sslmode=require&channel_binding=require'
+load_dotenv()
+DATABASE_URL=os.getenv('DATABASE_URL')
 
-
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL environment variable is not set")
 
 engine = create_engine(DATABASE_URL,echo=True)
 #connection = engine.connect()

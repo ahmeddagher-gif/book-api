@@ -6,14 +6,14 @@ from schemas import Author_create,Author_update, book_create,book_update,my_log_
 from sqlalchemy.orm import Session
 from fastapi import HTTPException,status
 import auth
+#env 
+import os
+from dotenv import load_dotenv
+
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+r = redis.Redis.from_url(REDIS_URL, decode_responses=True)
 
 
-r = redis.Redis(
-    host='localhost',  # Redis runs on the same machine
-    port=6379,         # Redis's default door number
-    decode_responses=True ,# Returns strings instead of bytes
-    protocol=2  #because your version is old 
-)
 
 
 def get_all_books(skip,limit,db:Session):

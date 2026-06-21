@@ -8,9 +8,17 @@ from fastapi.security import OAuth2PasswordBearer
 from db_connection import get_db
 from db_models import Author
 # === Configuration ===
-SECRET_KEY = "secret123321secretsecret123321"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+SECRET_KEY = os.getenv("SECRET_KEY")
+ALGORITHM = os.getenv("ALGORITHM", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+
+if not SECRET_KEY:
+    raise ValueError("SECRET_KEY environment variable is not set")
+
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")#this is the endpoint where at the end the user gets the token(ticket) and uses it then in protected endpoints
 
