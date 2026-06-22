@@ -35,13 +35,26 @@ jobs:
         pip install --upgrade pip
         pip install -r requirements.txt
     
+    - name: Debug Database URL
+      run: |
+        if [ -n "${{ secrets.DATABASE_URL }}" ]; then
+          echo "DATABASE_URL is set (length: ${#DATABASE_URL})"
+        else
+          echo "DATABASE_URL is NOT set or is empty"
+        fi
+      env:
+        DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
     - name: Run tests
       env:
         DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        SECRET_KEY: ${{secrets.SECRET_KEY}}
+        SECRET_KEY: ${{ secrets.SECRET_KEY }}
       run: |
         pytest --cov=. --cov-report=xml
     
     - name: Show coverage report
+      env:
+        DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        SECRET_KEY: ${{ secrets.SECRET_KEY }}
       run: |
         pytest --cov=. --cov-report=term
