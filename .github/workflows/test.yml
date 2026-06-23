@@ -35,15 +35,11 @@ jobs:
         pip install --upgrade pip
         pip install -r requirements.txt
     
-    - name: Debug Database URL
-      run: |
-        if [ -n "${{ secrets.DATABASE_URL }}" ]; then
-          echo "DATABASE_URL is set (length: ${#DATABASE_URL})"
-        else
-          echo "DATABASE_URL is NOT set or is empty"
-        fi
+    - name: Apply migrations
       env:
         DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      run: |
+        alembic upgrade head
 
     - name: Run tests
       env:

@@ -1,6 +1,6 @@
 from sqlalchemy.orm import declarative_base 
 from schemas import Role
-from sqlalchemy import Column, Integer, String, ForeignKey,Enum
+from sqlalchemy import Column, Integer, String, ForeignKey,Enum,Boolean
 from sqlalchemy.orm import relationship
 from typing import Optional
 base = declarative_base()
@@ -23,8 +23,7 @@ class Author(base):
     hashed_password=Column(String,unique=True,nullable=False)
     id=Column(Integer,primary_key=True,nullable=False)
     books=relationship("book_model", back_populates="author",cascade="all, delete-orphan")  # what relationship does is fire a query to the database and it says give me all the books that have the same user_id as this user's id(which is the foreign key condition) it fires this query when i access books(User.books) so you could imagine that books=db.query(book_model).filter(book_model.user_id==User.id).all() so it's like a list of books that belong to this user but why can't we just write this query ourselves? well we can but it's just more convenient to use relationships it allows us to do alot more things and you can kinda give this query properties
-
-
+    is_cool=Column(Boolean,nullable=True)
 
 
 
