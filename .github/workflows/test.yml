@@ -38,13 +38,15 @@ jobs:
     - name: Apply migrations
       env:
         DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        ENVIRONMENT: "development"  # ← Add this
       run: |
         alembic upgrade head
-
+    
     - name: Run tests
       env:
         DATABASE_URL: ${{ secrets.DATABASE_URL }}
         SECRET_KEY: ${{ secrets.SECRET_KEY }}
+        ENVIRONMENT: "development"  # ← Add this
       run: |
         pytest --cov=. --cov-report=xml
     
@@ -52,5 +54,6 @@ jobs:
       env:
         DATABASE_URL: ${{ secrets.DATABASE_URL }}
         SECRET_KEY: ${{ secrets.SECRET_KEY }}
+        ENVIRONMENT: "development"  # ← Add this
       run: |
         pytest --cov=. --cov-report=term

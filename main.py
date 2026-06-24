@@ -16,10 +16,20 @@ from db_models import base,book_model,Author
 from datetime import timedelta,datetime,timezone
 import auth
 
+# ========== LOGGING ==========
+import logging
+from logging_config import setup_logging
 
-app=FastAPI()
+# Set up logging ONCE at the start
+setup_logging()
 
+# Create a logger for this module
+logger = logging.getLogger(__name__)
 
+# ========== APP CREATION ==========
+app = FastAPI()
+
+logger.info("Application starting...")
 
 # Create the rate limiter (tracks requests by IP address)
 limiter = Limiter(key_func=get_remote_address)
@@ -30,7 +40,6 @@ app.state.limiter = limiter
 # Tell FastAPI what to do when rate limit is exceeded
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:5500"],
@@ -39,150 +48,267 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
+# ========== DATABASE ==========
 #base.metadata.drop_all(bind=engine)
 base.metadata.create_all(bind=engine)
+logger.info("Database tables created/verified")
 
-
-@app.get("/books",response_model=list[za_response])#makes the response a list of za_response objects
+# ========== BOOK ENDPOINTS ==========
+@app.get("/books", response_model=list[za_response])
 @limiter.limit("60/minute")
-def get_all_books(request:Request,skip:int=0,limit:int=2,db:Session=Depends(get_db)):
-    return my_funcs.get_all_books(skip,limit,db)
+def get_all_books(request: Request, skip: int = 0, limit: int = 2, db: Session = Depends(get_db)):
+    logger.info(f"GET /books called with skip={skip}, limit={limit}")
+    try:
+        result = my_funcs.get_all_books(skip, limit, db)
+        logger.info(f"Returned {len(result)} books")
+        return result
+    except Exception as e:
+        logger.error(f"Error getting books: {e}", exc_info=True)
+        raise
 
-
-@app.get("/book/{book_id}",response_model=za_response)
+@app.get("/book/{book_id}", response_model=za_response)
 @limiter.limit("60/minute")
-def get_book_by_id(request:Request,book_id:int,db:Session=Depends(get_db)):
-    return my_funcs.get_book(db,book_id)
+def get_book_by_id(request: Request, book_id: int, db: Session = Depends(get_db)):
+    logger.info(f"GET /book/{book_id} called")
+    try:
+        return my_funcs.get_book(db, book_id)
+    except HTTPException as e:
+        if e.status_code == 404:
+            logger.warning(f"Book {book_id} not found")
+        raise
+    except Exception as e:
+        logger.error(f"Error getting book {book_id}: {e}", exc_info=True)
+        raise
 
-@app.post("/create-book",response_model=za_response,status_code=201)
+@app.post("/create-book", response_model=za_response, status_code=201)
 @limiter.limit("10/minute")
-async def create_book(request:Request,request_body:book_create,db:Session=Depends(get_db)):
-    new_book=my_funcs.create_book(request_body,db)
-    await my_funcs.broadcast(new_book.book_name)
-    return new_book
+async def create_book(request: Request, request_body: book_create, db: Session = Depends(get_db)):
+    logger.info(f"POST /create-book called with title: {request_body.book_name}")
+    try:
+        new_book = my_funcs.create_book(request_body, db)
+        await my_funcs.broadcast(new_book.book_name)
+        logger.info(f"Book created: {new_book.book_name}")
+        return new_book
+    except Exception as e:
+        logger.error(f"Error creating book: {e}", exc_info=True)
+        raise
 
-@app.put("/update-book/{book_id}",response_model=za_response)
+@app.put("/update-book/{book_id}", response_model=za_response)
 @limiter.limit("10/minute")
-def update_book(request:Request,book_id:int,request_body:book_update,db:Session=Depends(get_db)):
-    return my_funcs.update_book(db,request_body,book_id)
+def update_book(request: Request, book_id: int, request_body: book_update, db: Session = Depends(get_db)):
+    logger.info(f"PUT /update-book/{book_id} called")
+    try:
+        result = my_funcs.update_book(db, request_body, book_id)
+        logger.info(f"Book {book_id} updated successfully")
+        return result
+    except HTTPException as e:
+        if e.status_code == 404:
+            logger.warning(f"Book {book_id} not found for update")
+        raise
+    except Exception as e:
+        logger.error(f"Error updating book {book_id}: {e}", exc_info=True)
+        raise
 
-@app.delete("/delete-book/{book_id}",status_code=204)
+@app.delete("/delete-book/{book_id}", status_code=204)
 @limiter.limit("5/minute")
-def delete_book(request:Request,book_id:int,db:Session=Depends(get_db)):
-    return my_funcs.delete_book(db,book_id)
+def delete_book(request: Request, book_id: int, db: Session = Depends(get_db)):
+    logger.info(f"DELETE /delete-book/{book_id} called")
+    try:
+        my_funcs.delete_book(db, book_id)
+        logger.info(f"Book {book_id} deleted successfully")
+        return
+    except HTTPException as e:
+        if e.status_code == 404:
+            logger.warning(f"Book {book_id} not found for deletion")
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting book {book_id}: {e}", exc_info=True)
+        raise
 
-#author crud functions
-
-@app.get("/authors",response_model=list[Author_response])#makes the response a list of Author_response objects
+# ========== AUTHOR ENDPOINTS ==========
+@app.get("/authors", response_model=list[Author_response])
 @limiter.limit("60/minute")
-def get_all_authors(request:Request,skip:int=0,limit:int=2,db:Session=Depends(get_db)):
-    return my_funcs.get_all_authors(skip,limit,db)
+def get_all_authors(request: Request, skip: int = 0, limit: int = 2, db: Session = Depends(get_db)):
+    logger.info(f"GET /authors called with skip={skip}, limit={limit}")
+    try:
+        result = my_funcs.get_all_authors(skip, limit, db)
+        logger.info(f"Returned {len(result)} authors")
+        return result
+    except Exception as e:
+        logger.error(f"Error getting authors: {e}", exc_info=True)
+        raise
 
-@app.get("/author/{author_id}",response_model=Author_response)
+@app.get("/author/{author_id}", response_model=Author_response)
 @limiter.limit("60/minute")
-def get_author_by_id(request:Request,author_id:int,db:Session=Depends(get_db)):
-   return my_funcs.get_author_by_id(db,author_id)
+def get_author_by_id(request: Request, author_id: int, db: Session = Depends(get_db)):
+    logger.info(f"GET /author/{author_id} called")
+    try:
+        return my_funcs.get_author_by_id(db, author_id)
+    except HTTPException as e:
+        if e.status_code == 404:
+            logger.warning(f"Author {author_id} not found")
+        raise
+    except Exception as e:
+        logger.error(f"Error getting author {author_id}: {e}", exc_info=True)
+        raise
 
-@app.post("/create-author",response_model=Author_response,status_code=201)
+@app.post("/create-author", response_model=Author_response, status_code=201)
 @limiter.limit("10/minute")
-def create_author(request:Request,request_body:Author_create,db:Session=Depends(get_db)):
-    if my_funcs.check_author_exists(request_body,db):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT,detail="author already exists bro ")
-    return my_funcs.create_author(db,request_body)
+def create_author(request: Request, request_body: Author_create, db: Session = Depends(get_db)):
+    logger.info(f"POST /create-author called for email: {request_body.email}")
     
-@app.post("/create-author-no-return",status_code=201)
+    if my_funcs.check_author_exists(request_body, db):
+        logger.warning(f"Attempt to create existing author: {request_body.email}")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="author already exists bro ")
+    
+    try:
+        author = my_funcs.create_author(db, request_body)
+        logger.info(f"Author created successfully: {author.email}")
+        return author
+    except Exception as e:
+        logger.error(f"Error creating author {request_body.email}: {e}", exc_info=True)
+        raise
+
+@app.post("/create-author-no-return", status_code=201)
 @limiter.limit("10/minute")
 def create_author_no_return(
-    background_tasks:BackgroundTasks,
-    request:Request,
-    request_body:Author_create,
-    db:Session=Depends(get_db)
-    ):
-    if my_funcs.check_author_exists(request_body,db):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT,detail="author already exists bro ")
-    background_tasks.add_task(my_funcs.create_author,db,request_body)
+    background_tasks: BackgroundTasks,
+    request: Request,
+    request_body: Author_create,
+    db: Session = Depends(get_db)
+):
+    logger.info(f"POST /create-author-no-return called for email: {request_body.email}")
+    
+    if my_funcs.check_author_exists(request_body, db):
+        logger.warning(f"Attempt to create existing author: {request_body.email}")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="author already exists bro ")
+    
+    background_tasks.add_task(my_funcs.create_author, db, request_body)
+    logger.info(f"Author creation task added to background for: {request_body.email}")
     return "welcome author , you're now an author and i will not return anything sorry "
 
-
-@app.put("/update-author/{author_id}",response_model=Author_response)
+@app.put("/update-author/{author_id}", response_model=Author_response)
 @limiter.limit("10/minute")
-def update_author(request:Request,author_id:int,request_body:Author_update,db:Session=Depends(get_db)):
-    return my_funcs.update_author(db,request_body,author_id)
-    
+def update_author(request: Request, author_id: int, request_body: Author_update, db: Session = Depends(get_db)):
+    logger.info(f"PUT /update-author/{author_id} called")
+    try:
+        result = my_funcs.update_author(db, request_body, author_id)
+        logger.info(f"Author {author_id} updated successfully")
+        return result
+    except HTTPException as e:
+        if e.status_code == 404:
+            logger.warning(f"Author {author_id} not found for update")
+        raise
+    except Exception as e:
+        logger.error(f"Error updating author {author_id}: {e}", exc_info=True)
+        raise
 
-@app.delete("/delete-author/{author_id}",status_code=204)
+@app.delete("/delete-author/{author_id}", status_code=204)
 @limiter.limit("5/minute")
-def delete_author(request:Request,author_id:int,db:Session=Depends(get_db)):
-    return my_funcs.delete_author(db,author_id)
-    
-# relationship endpoints
+def delete_author(request: Request, author_id: int, db: Session = Depends(get_db)):
+    logger.info(f"DELETE /delete-author/{author_id} called")
+    try:
+        my_funcs.delete_author(db, author_id)
+        logger.info(f"Author {author_id} deleted successfully")
+        return
+    except HTTPException as e:
+        if e.status_code == 404:
+            logger.warning(f"Author {author_id} not found for deletion")
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting author {author_id}: {e}", exc_info=True)
+        raise
 
-@app.get("/author-books/{author_id}",response_model=list[za_response])
+# ========== RELATIONSHIP ENDPOINTS ==========
+@app.get("/author-books/{author_id}", response_model=list[za_response])
 @limiter.limit("60/minute")
-def get_author_books(request:Request,author_id:int,db:Session=Depends(get_db)):
-    author = my_funcs.get_author_by_id(db,author_id)
-    return author.books
+def get_author_books(request: Request, author_id: int, db: Session = Depends(get_db)):
+    logger.info(f"GET /author-books/{author_id} called")
+    try:
+        author = my_funcs.get_author_by_id(db, author_id)
+        return author.books
+    except Exception as e:
+        logger.error(f"Error getting books for author {author_id}: {e}", exc_info=True)
+        raise
 
-@app.get("/book-author/{book_id}",response_model=Author_response)
+@app.get("/book-author/{book_id}", response_model=Author_response)
 @limiter.limit("60/minute")
-def get_book_author(request:Request,book_id:int,db:Session=Depends(get_db)):
-    book = my_funcs.get_book(db,book_id)
-    return book.author
+def get_book_author(request: Request, book_id: int, db: Session = Depends(get_db)):
+    logger.info(f"GET /book-author/{book_id} called")
+    try:
+        book = my_funcs.get_book(db, book_id)
+        return book.author
+    except Exception as e:
+        logger.error(f"Error getting author for book {book_id}: {e}", exc_info=True)
+        raise
 
-#endpoints requiring security
+# ========== AUTHENTICATION ENDPOINTS ==========
 @app.post("/login")
 @limiter.limit("5/minute")
-def log_in(request:Request,log_in_data:my_log_in,db:Session=Depends(get_db))->token_response:
-    author=auth.authenticate_author(log_in_data.email,log_in_data.password,db)
+def log_in(request: Request, log_in_data: my_log_in, db: Session = Depends(get_db)) -> token_response:
+    logger.info(f"Login attempt for email: {log_in_data.email}")
+    
+    author = auth.authenticate_author(log_in_data.email, log_in_data.password, db)
     if not author:
+        logger.warning(f"Failed login attempt for email: {log_in_data.email}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="wrong email or password",
             headers={"WWW-Authenticate": "Bearer"}
-            )
-    expiry_time=timedelta(minutes=30)
-    data={
-        "author_id":author.id
-        
-    }
-    token=auth.create_access_token(data,expiry_time)
+        )
+    
+    expiry_time = timedelta(minutes=30)
+    data = {"author_id": author.id}
+    token = auth.create_access_token(data, expiry_time)
+    
+    logger.info(f"Successful login for email: {log_in_data.email}")
     return {"access_token": token, "token_type": "bearer"}
 
-#protected endpoint
-@app.get("/my-profile",response_model=Author_response)
+# ========== PROTECTED ENDPOINTS ==========
+@app.get("/my-profile", response_model=Author_response)
 @limiter.limit("60/minute")
-def get_profile(request:Request,author: Author = Depends(auth.get_current_author),db:Session=Depends(get_db)):
+def get_profile(request: Request, author: Author = Depends(auth.get_current_author), db: Session = Depends(get_db)):
+    logger.info(f"GET /my-profile called for user: {author.email}")
     return author
 
-#get author books protected version
-@app.get("/my-books",response_model=list[za_response])
+@app.get("/my-books", response_model=list[za_response])
 @limiter.limit("60/minute")
-def get_my_books(request:Request,author: Author = Depends(auth.get_current_author),db:Session=Depends(get_db)):
+def get_my_books(request: Request, author: Author = Depends(auth.get_current_author), db: Session = Depends(get_db)):
+    logger.info(f"GET /my-books called for user: {author.email}")
     return author.books
 
-#authorized function 
-@app.delete('/delete-other-author/{author_id}',status_code=204)
+# ========== ADMIN ENDPOINTS ==========
+@app.delete('/delete-other-author/{author_id}', status_code=204)
 @limiter.limit("3/minute")
-def delete_other_author(request:Request,author_id:int,_=Depends(auth.require_admin),db:Session=Depends(get_db)):
-        return my_funcs.delete_author(db,author_id)
+def delete_other_author(request: Request, author_id: int, _=Depends(auth.require_admin), db: Session = Depends(get_db)):
+    logger.info(f"DELETE /delete-other-author/{author_id} called by admin")
+    try:
+        my_funcs.delete_author(db, author_id)
+        logger.info(f"Author {author_id} deleted by admin")
+        return
+    except HTTPException as e:
+        if e.status_code == 404:
+            logger.warning(f"Author {author_id} not found for admin deletion")
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting author {author_id} by admin: {e}", exc_info=True)
+        raise
 
-#websocket
+# ========== WEBSOCKET ==========
+connections: List[WebSocket] = []
 
-connections:List[WebSocket]=[]
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    # Step 1: Accept the connection (REQUIRED)
+    logger.info("New WebSocket connection attempt")
     await websocket.accept()
-    
-    # Step 2: Wait for messages forever (or until disconnect)
     connections.append(websocket)
+    logger.info(f"WebSocket connection accepted. Total connections: {len(connections)}")
+    
     try:
         while True:
-        # Step 3: Receive a message from client
             data = await websocket.receive_text()
-        
-        # Step 4: Send a message back to client
+            logger.debug(f"WebSocket received: {data}")
             await websocket.send_text(f"Echo: {data}")
     except WebSocketDisconnect:
-        print("websocket disconnected")
+        connections.remove(websocket)
+        logger.info(f"WebSocket disconnected. Total connections: {len(connections)}")

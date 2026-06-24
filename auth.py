@@ -7,107 +7,119 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from db_connection import get_db
 from db_models import Author
+
+# ========== LOGGING ==========
+import logging
+logger = logging.getLogger(__name__)
+
 # === Configuration ===
-import os
-from dotenv import load_dotenv
+SECRET_KEY = "secret123321secretsecret123321"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
-load_dotenv()
-SECRET_KEY = os.getenv("SECRET_KEY")
-ALGORITHM = os.getenv("ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
-if not SECRET_KEY:
-    raise ValueError("SECRET_KEY environment variable is not set")
-
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")#this is the endpoint where at the end the user gets the token(ticket) and uses it then in protected endpoints
-
-
-#hashing functions
-def hash_psw(inp_pw:str):
-    pw_bites=inp_pw.encode("utf-8")
-    hashed_pw=bcrypt.hashpw(pw_bites,bcrypt.gensalt())
+# ========== HASHING FUNCTIONS ==========
+def hash_psw(inp_pw: str):
+    logger.debug("Hashing password")
+    pw_bites = inp_pw.encode("utf-8")
+    hashed_pw = bcrypt.hashpw(pw_bites, bcrypt.gensalt())
     return hashed_pw.decode('utf-8')
 
-def check_psw(inp_psw:str,stored_hash):
-    pw_bites=inp_psw.encode("utf-8")
-    stored_hash=stored_hash.encode("utf-8")
-    is_valid=bcrypt.checkpw(pw_bites,stored_hash)
+def check_psw(inp_psw: str, stored_hash):
+    logger.debug("Verifying password")
+    pw_bites = inp_psw.encode("utf-8")
+    stored_hash = stored_hash.encode("utf-8")
+    is_valid = bcrypt.checkpw(pw_bites, stored_hash)
+    logger.debug(f"Password verification result: {is_valid}")
     return is_valid
 
-
-#token functions
-def create_access_token(data:dict,expire_time_inp:timedelta = None)->str:#takes data(dict) returns token(str)
-    za_data=data.copy()
+# ========== TOKEN FUNCTIONS ==========
+def create_access_token(data: dict, expire_time_inp: timedelta = None) -> str:
+    logger.debug("Creating access token")
+    za_data = data.copy()
     if expire_time_inp:
-        expire_time=datetime.now(timezone.utc)+ expire_time_inp
+        expire_time = datetime.now(timezone.utc) + expire_time_inp
     else:
-        expire_time=datetime.now(timezone.utc)+timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    za_data['exp']=expire_time
-    token=jwt.encode(za_data,SECRET_KEY,ALGORITHM)
+        expire_time = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    za_data['exp'] = expire_time
+    token = jwt.encode(za_data, SECRET_KEY, ALGORITHM)
+    logger.debug("Access token created")
     return token
 
-def verify_token(token:str)->dict:#takes token(str) return data(dict)
+def verify_token(token: str) -> dict:
+    logger.debug("Verifying token")
     try:
-        data=jwt.decode(token,SECRET_KEY,algorithms=[ALGORITHM])
+        data = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        logger.debug("Token verified successfully")
         return data
-    except jwt.JWTError:
+    except jwt.JWTError as e:
+        logger.warning(f"Token verification failed: {e}")
         return None
 
-#authentication functions:-
-
-def authenticate_author(email:str,password:str,db:Session):
-    author=db.query(Author).filter(Author.email==email).first()# you're here querying the database table 
+# ========== AUTHENTICATION FUNCTIONS ==========
+def authenticate_author(email: str, password: str, db: Session):
+    logger.debug(f"Authenticating user: {email}")
+    
+    author = db.query(Author).filter(Author.email == email).first()
     if not author:
+        logger.warning(f"Authentication failed: email not found - {email}")
         return None
-    if not check_psw(password,author.hashed_password):#but here you're simply fetching the stored hashed password that's why it's author not Author
+    
+    if not check_psw(password, author.hashed_password):
+        logger.warning(f"Authentication failed: wrong password - {email}")
         return None
-    return author 
+    
+    logger.info(f"Authentication successful: {email}")
+    return author
 
-def get_current_author(token:str=Depends(oauth2_scheme),db:Session=Depends(get_db)):
-    data=verify_token(token)
-    if data is None :
-        raise HTTPException (
+def get_current_author(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    logger.debug("Extracting current user from token")
+    
+    data = verify_token(token)
+    if data is None:
+        logger.warning("Invalid token received")
+        raise HTTPException(
             status.HTTP_401_UNAUTHORIZED,
             detail='Invalid token credentials',
             headers={"WWW-Authenticate": "Bearer"}
-             )
-    author_id=data['author_id']
-    if author_id is None:#the id is already checked in the schema but this is defensive programming
-        raise HTTPException (
+        )
+    
+    author_id = data['author_id']
+    if author_id is None:
+        logger.warning("Token missing author_id")
+        raise HTTPException(
             status.HTTP_401_UNAUTHORIZED,
-            detail='Invalid token credentials',#you could say the id isn't found but it's best you don't tell anyone your failure details in security so not just in details also in the http exception just say unauthorizd
+            detail='Invalid token credentials',
             headers={"WWW-Authenticate": "Bearer"}
-             )
-    author=db.query(Author).filter(Author.id==author_id).first()
+        )
+    
+    author = db.query(Author).filter(Author.id == author_id).first()
     if author is None:
-        raise HTTPException (
+        logger.warning(f"Author not found for ID: {author_id}")
+        raise HTTPException(
             status.HTTP_401_UNAUTHORIZED,
-            detail='Invalid token credentials',#you could say the id isn't found but it's best you don't tell anyone your failure details in security so not just in details also in the http exception just say unauthorizd
+            detail='Invalid token credentials',
             headers={"WWW-Authenticate": "Bearer"}
-             )
+        )
+    
+    logger.debug(f"Current user: {author.email}")
     return author
 
-
-def require_admin(token:str=Depends(oauth2_scheme)):
-    data=verify_token(token)
-    print("TOKEN DATA:", data)  # ← add this
-    print("ROLE VALUE:", data.get('role'))
-    print("EXPECTED:", Role.ADMIN.value)
+def require_admin(token: str = Depends(oauth2_scheme)):
+    logger.debug("Checking admin permissions")
+    data = verify_token(token)
     if data is None:
-        raise HTTPException (
-        status.HTTP_401_UNAUTHORIZED,
-        detail='Invalid token credentials',
-        headers={"WWW-Authenticate": "Bearer"}
+        logger.warning("Invalid token for admin check")
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            detail='Invalid token credentials',
+            headers={"WWW-Authenticate": "Bearer"}
         )
-    #if data["role"]!=Role.ADMIN:
-    if data.get('role')!=Role.ADMIN.value:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,detail='you\'r not him bro')
     
-            
-
-
-
-
-
-
+    if data.get('role') != Role.ADMIN.value:
+        logger.warning(f"User tried to access admin endpoint without admin role: {data.get('author_id')}")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='you\'r not him bro')
+    
+    logger.debug("Admin permission granted")
+    return True
