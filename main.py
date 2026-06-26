@@ -1,57 +1,149 @@
-from fastapi import FastAPI,Depends,HTTPException,status,Request,BackgroundTasks,WebSocket,WebSocketDisconnect
-#CORS
+from fastapi import FastAPI, Depends, HTTPException, status, Request, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-#rate limiter
+from contextlib import asynccontextmanager
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+from datetime import datetime, timezone
+from typing import List
+import logging
+import redis
+import os
+from dotenv import load_dotenv
+
+# ========== ENVIRONMENT VARIABLES ==========
+load_dotenv()
+
+# ========== LOGGING ==========
+from logging_config import setup_logging
+setup_logging()
+logger = logging.getLogger(__name__)
+
+# ========== DATABASE ==========
+from db_connection import get_db, session_factory, engine
+from db_models import base, book_model, Author
+
+# ========== REDIS ==========
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+try:
+    r = redis.Redis.from_url(REDIS_URL, decode_responses=True, protocol=2)
+except:
+    # Fallback to direct connection
+    r = redis.Redis(
+        host='localhost',
+        port=6379,
+        decode_responses=True,
+        protocol=2
+    )
+
+# ========== RATE LIMITER ==========
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-#websocket
-from typing import List #list[websockets]
-#my files
-from schemas import book_create,za_response,book_update,Author_create,Author_update,Author_response,my_log_in,token_response,Role
-from db_connection import get_db,engine
-from sqlalchemy.orm import Session
-import my_funcs
-from db_models import base,book_model,Author
-from datetime import timedelta,datetime,timezone
-import auth
 
-# ========== LOGGING ==========
-import logging
-from logging_config import setup_logging
-
-# Set up logging ONCE at the start
-setup_logging()
-
-# Create a logger for this module
-logger = logging.getLogger(__name__)
-
-# ========== APP CREATION ==========
-app = FastAPI()
-
-logger.info("Application starting...")
-
-# Create the rate limiter (tracks requests by IP address)
 limiter = Limiter(key_func=get_remote_address)
 
-# Store it in the app
-app.state.limiter = limiter
+# ========== LIFESPAN (Graceful Shutdown & Startup) ==========
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # ===== STARTUP =====
+    logger.info("Application starting...")
+    
+    # Check database connection on startup
+    try:
+        with session_factory() as db:
+            db.execute(text("SELECT 1"))
+        logger.info("Database connection successful")
+    except Exception as e:
+        logger.error(f"Database connection failed: {e}")
+        raise
+    
+    # Check Redis connection on startup
+    try:
+        r.ping()
+        logger.info("Redis connection successful")
+    except Exception as e:
+        logger.error(f"Redis connection failed: {e}")
+        raise
+    
+    # Create database tables (if needed)
+    try:
+        base.metadata.create_all(bind=engine)
+        logger.info("Database tables created/verified")
+    except Exception as e:
+        logger.error(f"Error creating tables: {e}")
+        raise
+    
+    # ===== APP RUNS HERE =====
+    yield
+    
+    # ===== SHUTDOWN =====
+    logger.info("Application shutting down gracefully...")
+    
+    # Close Redis connection
+    try:
+        r.close()
+        logger.info("Redis connection closed")
+    except Exception as e:
+        logger.error(f"Error closing Redis connection: {e}")
+    
+    logger.info("Application shut down successfully")
 
-# Tell FastAPI what to do when rate limit is exceeded
+# ========== APP CREATION ==========
+app = FastAPI(lifespan=lifespan)
+
+# ========== EXCEPTION HANDLERS ==========
+app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# ========== CORS ==========
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:5500"],
+    allow_origins=[
+        "http://127.0.0.1:5500",
+        "http://localhost:3000",
+        "https://your-app.onrender.com",  # Replace with your Render URL
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ========== DATABASE ==========
-#base.metadata.drop_all(bind=engine)
-base.metadata.create_all(bind=engine)
-logger.info("Database tables created/verified")
+# ========== HEALTH CHECK ==========
+@app.get("/health")
+def health_check(db: Session = Depends(get_db)):
+    """
+    Health check endpoint for Render and monitoring.
+    Checks database and Redis connections.
+    """
+    try:
+        # Check database
+        db.execute(text("SELECT 1"))
+        
+        # Check Redis
+        r.ping()
+        
+        return {
+            "status": "healthy",
+            "database": "connected",
+            "redis": "connected",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Service unhealthy"
+        )
+
+# ========== IMPORT YOUR FILES ==========
+import my_funcs
+import auth
+from schemas import (
+    book_create, za_response, book_update,
+    Author_create, Author_update, Author_response,
+    my_log_in, token_response
+)
+from datetime import timedelta
 
 # ========== BOOK ENDPOINTS ==========
 @app.get("/books", response_model=list[za_response])

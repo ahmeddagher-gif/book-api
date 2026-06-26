@@ -22,8 +22,6 @@ def get_db(): # dependency function
 
 
 
-# Run this once, usually in a separate script or at startup
-#Base.metadata.create_all(bind=engine)
 
     
 
